@@ -1,5 +1,5 @@
 ###
-#   Version 1.5
+#   Version 1.6
 ###
 
 # installiert die benötigten Packages (falls nicht bereits erfolgt)
@@ -48,6 +48,7 @@ daten_einlesen <- function(){
   gcsframe$gcs_auge       <<- as.integer(gcsframe$gcs_auge)
   gcsframe$gcs_verbal     <<- as.integer(gcsframe$gcs_verbal)
   gcsframe$gcs_motorisch  <<- as.integer(gcsframe$gcs_motorisch)
+  gcsframe$zeit           <<- format(gcsframe$zeit, format = "%H:%M:%S")
 }
 
 # Initialisieren der Daten
@@ -141,10 +142,10 @@ ui <- fluidPage(
                     actionButton("auswahl_suchen", "Patient auswählen", width = "50%")),
             tabItem("gcstab",
                     textOutput("gcsSummaryPlot"),
-                    plotOutput("gcsAugePlot",width="50%",height="150px"),
-                    plotOutput("gcsVerbalPlot",width="50%",height="150px"),
-                    plotOutput("gcsMotorischPlot",width="50%",height="150px"),
-                    plotOutput("gcsTotalPlot",width="50%",height="150px"))
+                    plotOutput("gcsAugePlot",width="70%",height="200px"),
+                    plotOutput("gcsVerbalPlot",width="70%",height="200px"),
+                    plotOutput("gcsMotorischPlot",width="70%",height="200px"),
+                    plotOutput("gcsTotalPlot",width="70%",height="200px"))
           )
       )
     )
@@ -291,7 +292,7 @@ server <- function(input, output, session) {
     # neue Datenreihe wird an bestehenden Datensatz angebunden
     patientenframe_neu <- rbind.data.frame(patientenframe, patient, stringsAsFactors = FALSE)
     write_xlsx(patientenframe_neu, path = patientenname)
-    gcs<- data.frame(pid=input$pid, datum= input$datum, zeit= format(strptime(input$zeit,"%H:%M:%S"),"%H:%M:%S"), gcs_auge=input$gcs_auge, gcs_verbal=input$gcs_verbal, gcs_motorisch=input$gcs_motorisch, stringsAsFactors = FALSE)
+    gcs<- data.frame(pid=input$pid, datum= input$datum, zeit=  format(input$zeit, format = "%H:%M:%S"), gcs_auge=input$gcs_auge, gcs_verbal=input$gcs_verbal, gcs_motorisch=input$gcs_motorisch, stringsAsFactors = FALSE)
     gcsframe_neu <- rbind.data.frame(gcsframe, gcs,stringsAsFactors = FALSE)
     gcsframe_neu$datum <- as.Date(gcsframe_neu$datum, format = "%Y-%m-%d", origin="1970-01-01")
     write_xlsx(gcsframe_neu, path = gcsname)
@@ -352,9 +353,6 @@ server <- function(input, output, session) {
     gcs_selected <- filter(gcsframe, pid == gcsframe_source)
     gcs_selected2 <- mutate(gcs_selected, totalScore = gcs_auge+gcs_verbal+gcs_motorisch)
     gcs_selected$zeit= format(gcs_selected$zeit,"%H:%M:%S")
-    gcs_selected$datumzeit = as.POSIXct(paste(gcs_selected$datum, gcs_selected$zeit), format="%Y-%m-%d %H:%M:%S")
-    print(class(gcs_selected$datumzeit))
-    print(gcs_selected$datumzeit)
     return(gcs_selected2)
   }
   
@@ -366,31 +364,40 @@ server <- function(input, output, session) {
   })
   
   graphen_zeichnen <- function(x){
-    
-    output$gcsAugePlot <- renderPlot({ggplot(data =  x) +
-        geom_point(mapping = aes(x = datumzeit, y = gcs_auge, color = gcs_auge == 4))+ 
-        scale_color_manual(values = colorscale)  + scale_x_datetime(limits=c(min(datumzeit),max(datumzeit)))+
-        geom_text(aes(label= gcs_auge, x = datum, y = gcs_auge), position = position_nudge(y = -0.25))}+ 
-          xlab("Datum") + ylab("GCS(Öffnen der Augen)")+
-          ylim(1,4) +theme_bw()+ theme(legend.position = "none"))
+    x$datumzeit <- paste(x$datum, x$zeit)
+    x$datumzeit <- as.POSIXct(x$datumzeit,  format="%Y-%m-%d %H:%M:%S", tz = "UTC")
+    output$gcsAugePlot <- renderPlot({ggplot(data =  x)  +
+        geom_point(mapping = aes(x = datumzeit, y = gcs_auge, color = gcs_auge == 4)) +
+        scale_color_manual(values = colorscale) +
+        scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
+        geom_text(aes(label= gcs_auge, x = datumzeit, y = gcs_auge), position = position_nudge(y = -0.25))}+ 
+        ylab("GCS(Öffnen der Augen)")+
+        ylim(1,4) +theme_bw()+ ggtitle("GCS(Öffnen der Augen)") +
+        theme(legend.position = "none", axis.text.x  = element_text(angle=45, hjust = 1)))
     output$gcsVerbalPlot <- renderPlot({ggplot(data =  x) +
-        geom_point(mapping = aes(x = datum, y = gcs_verbal, color = gcs_verbal == 5))+
+        geom_point(mapping = aes(x = datumzeit, y = gcs_verbal, color = gcs_verbal == 5))+
         scale_color_manual(values = colorscale)+
-        geom_text(aes(label= gcs_verbal, x = datum, y = gcs_verbal), position = position_nudge(y = -0.25))}+ 
-          xlab("Datum") + ylab("GCS(verbale Antwort)")+
-          ylim(1,5) +theme_bw()+ theme(legend.position = "none"))
+        scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
+        geom_text(aes(label= gcs_verbal, x = datumzeit, y = gcs_verbal), position = position_nudge(y = -0.25))}+ 
+        ylab("GCS(verbale Antwort)")+
+        ylim(1,5) +theme_bw()+ ggtitle("GCS(verbale Antwort)") +
+        theme(legend.position = "none", axis.text.x  = element_text(angle=45, hjust = 1)))
     output$gcsMotorischPlot <- renderPlot({ggplot(data =  x) +
-        geom_point(mapping = aes(x = datum, y = gcs_motorisch, color = gcs_motorisch==6))+
+        geom_point(mapping = aes(x = datumzeit, y = gcs_motorisch, color = gcs_motorisch==6))+
         scale_color_manual(values = colorscale)+ 
-        geom_text(aes(label= gcs_motorisch, x = datum, y = gcs_motorisch), position = position_nudge(y = -0.25))}+ 
-          xlab("Datum") + ylab("GCS(motorische Antwort)")+
-          ylim(1,6) +theme_bw()+ theme(legend.position = "none"))
+        scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
+        geom_text(aes(label= gcs_motorisch, x = datumzeit, y = gcs_motorisch), position = position_nudge(y = -0.25))}+ 
+        ylab("GCS(motorische Antwort)")+
+        ylim(1,6) +theme_bw()+ ggtitle("GCS(motorische Antwort)") +
+        theme(legend.position = "none", axis.text.x  = element_text(angle=45, hjust = 1)))
     output$gcsTotalPlot <- renderPlot({ggplot(data =  x) +
-        geom_point(mapping = aes(x = datum, y = totalScore, color = totalScore ==15)) +
+        geom_point(mapping = aes(x = datumzeit, y = totalScore, color = totalScore ==15)) +
         scale_color_manual(values = colorscale)+ 
-        geom_text(aes(label= totalScore, x = datum, y = totalScore), position = position_nudge(y = -0.75))}+ 
-          xlab("Datum") + ylab("GCS(Gesamt)")+
-          ylim(1,15) +theme_bw()+ theme(legend.position = "none"))
+        scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
+        geom_text(aes(label= totalScore, x = datumzeit, y = totalScore), position = position_nudge(y = -0.75))}+ 
+        ylab("GCS(Gesamt)")+
+        ylim(1,15) +theme_bw()+ggtitle("GCS(Gesamt)") +
+        theme(legend.position = "none", axis.text.x  = element_text(angle=45, hjust = 1)))
   }
   
   observeEvent(input$auswahl_suchen,{
