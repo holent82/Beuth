@@ -48,7 +48,7 @@ daten_einlesen <- function(){
   gcsframe$gcs_auge       <<- as.integer(gcsframe$gcs_auge)
   gcsframe$gcs_verbal     <<- as.integer(gcsframe$gcs_verbal)
   gcsframe$gcs_motorisch  <<- as.integer(gcsframe$gcs_motorisch)
-  gcsframe$zeit           <<- format(gcsframe$zeit, format = "%H:%M:%S")
+ # gcsframe$zeit           <<- format(gcsframe$zeit, format = "%H:%M:%S")
 }
 
 # Initialisieren der Daten
@@ -62,6 +62,8 @@ x <- tryCatch(
     gcsname=  choose.files(caption = "Bitte die Datei gcs_daten.xlsx auswählen")
   }
 )
+identical_pid = 0
+identical_name = 0
 
 # Definition der Variablen für die Benutzereingaben
 choices_auge = c(
@@ -131,7 +133,7 @@ ui <- fluidPage(
                     textInput("name", label="Name", value = "", width = "200px", placeholder = NULL),
                     h3("GCS"),
                     dateInput("datum", label="Untersuchungsdatum", value = "", width = "200px"),
-                    timeInput("zeit", "Untersuchungszeit", value = strptime("", "%T"), minute.steps = 5),
+                #    timeInput("zeit", label = "Untersuchungszeit", value = strptime("", "%T"), minute.steps = 5),
                     selectInput("gcs_auge", label = "Öffnen der Augen", choices = choices_auge),
                     selectInput("gcs_verbal", label = "Beste verbale Reaktion", choices= choices_verbal ),
                     selectInput("gcs_motorisch", label = "Beste motorische Reaktion", choices=  choices_motorisch),
@@ -160,14 +162,13 @@ server <- function(input, output, session) {
   output$selection <- DT::renderDataTable(patientenframe, selection = 'single')
   
   # Prüfen identischer Eingaben
-  values <- reactiveValues(identical_pid = 0)
+  values <- reactiveValues(identical_pid = 0, identical_name = 0)
   
   test_pid<- observeEvent(input$save, {
     identical_pid<- sum(as.numeric(c(FALSE, sapply(1:nrow(patientenframe), function(i)
-      any((patientenframe$pid[i] == input$pid && patientenframe$name[i] != input$name) || (patientenframe$pid[i] == input$pid && patientenframe$vorname[i] != input$vorname) )))))
-  
-
-  
+      any(patientenframe$pid[i] == input$pid)))))
+    identical_name<- sum(as.numeric(c(FALSE, sapply(1:nrow(patientenframe), function(i)
+      any(patientenframe$name[i] == input$name && patientenframe$vorname[i] == input$vorname)))))
      feedbackWarning(
        inputId = "pid",
        leer(input$pid)==TRUE,
@@ -188,10 +189,9 @@ server <- function(input, output, session) {
         text = "Bitte nur Zahlen für Patienten-ID eingeben"
       )
       
-      
-      feedbackDanger(
+      feedbackWarning(
         inputId = "pid",
-        is.numeric(input$pid)==TRUE && identical_pid == 1,
+        is.numeric(input$pid)==TRUE && identical_pid !=0 && identical_name == 0,
         text = "PID bereits vergeben"
       )
     
@@ -220,14 +220,14 @@ server <- function(input, output, session) {
     text = "Bitte Untersuchungsdatum eingeben"
   )
   })
-  
-  test_zeit<- observeEvent(input$save, {
-    feedbackWarning(
-      inputId = "zeit",
-      condition = leer(input$zeit) == TRUE,
-      text = "Bitte Untersuchungszeit eingeben"
-    )
-  })
+  # 
+  # test_zeit<- observeEvent(input$save, {
+  #   feedbackWarning(
+  #     inputId = "zeit",
+  #     condition = leer(input$zeit) == TRUE,
+  #     text = "Bitte Untersuchungszeit eingeben"
+  #   )
+  # })
   
   test_gcs_auge<- observeEvent(input$save, {
   feedbackWarning(
@@ -251,6 +251,8 @@ server <- function(input, output, session) {
     condition = input$gcs_motorisch== "",
     text = "Bitte GCS (motorisch) eingeben"
   )
+    
+    
   })
   
   dataModal <- function(failed = FALSE){
@@ -262,7 +264,7 @@ server <- function(input, output, session) {
       renderText({paste("Name: ",input$name)}),
       renderText({paste("Vorname: ",input$vorname)}),
       renderText({paste("Datum: ",input$datum)}),
-      renderText({paste("Zeit: ",input$zeit)}),
+     # renderText({paste("Zeit: ",input$zeit)}),
       renderText({paste("Score Auge: ",input$gcs_auge)}),
       renderText({paste("Score Verbal: ",input$gcs_verbal)}),
       renderText({paste("Score Motorisch: ",input$gcs_motorisch)}),
@@ -292,7 +294,9 @@ server <- function(input, output, session) {
     # neue Datenreihe wird an bestehenden Datensatz angebunden
     patientenframe_neu <- rbind.data.frame(patientenframe, patient, stringsAsFactors = FALSE)
     write_xlsx(patientenframe_neu, path = patientenname)
-    gcs<- data.frame(pid=input$pid, datum= input$datum, zeit=  format(input$zeit, format = "%H:%M:%S"), gcs_auge=input$gcs_auge, gcs_verbal=input$gcs_verbal, gcs_motorisch=input$gcs_motorisch, stringsAsFactors = FALSE)
+    gcs<- data.frame(pid=input$pid, datum= input$datum, 
+                   #  zeit=  format(input$zeit, format = "%H:%M:%S"), 
+                     gcs_auge=input$gcs_auge, gcs_verbal=input$gcs_verbal, gcs_motorisch=input$gcs_motorisch, stringsAsFactors = FALSE)
     gcsframe_neu <- rbind.data.frame(gcsframe, gcs,stringsAsFactors = FALSE)
     gcsframe_neu$datum <- as.Date(gcsframe_neu$datum, format = "%Y-%m-%d", origin="1970-01-01")
     write_xlsx(gcsframe_neu, path = gcsname)
@@ -304,26 +308,32 @@ server <- function(input, output, session) {
     gcs_selected <- gcs_selected_anlegen(input$pid)
     patient_selected <- patient_selected_anlegen(input$pid)
     graphen_zeichnen(gcs_selected)
-    
     output$patiententitel <- renderText({ paste(patient_selected$vorname, patient_selected$name, ",", patient_selected$pid)})
     output$gcsSummaryPlot <- renderText(paste("Letzte GCS erfolgt am", patient_selected$datum))
     removeModal()
   })
   
+  
+  
   # Erstellung einer neuen Datenreihe
   neuerPatient <- observeEvent(input$save, {
+    identical_pid<- sum(as.numeric(c(FALSE, sapply(1:nrow(patientenframe), function(i)
+      any(patientenframe$pid[i] == input$pid)))))
+    identical_name<- sum(as.numeric(c(FALSE, sapply(1:nrow(patientenframe), function(i)
+      any(patientenframe$name[i] == input$name && patientenframe$vorname[i] == input$vorname)))))
     req(input$pid)
     req(input$vorname)
     req(input$name)
     
     req(input$datum)
-    req(input$zeit)
+  #  req(input$zeit)
     req(input$gcs_auge)
     req(input$gcs_verbal)
     req(input$gcs_motorisch)
-    
+    if (identical_pid !=0 && identical_name != 0 ||identical_pid ==0)
+    {
     showModal(dataModal())
-    
+  }
   })
   
   # Löschen der Eingaben
@@ -352,7 +362,7 @@ server <- function(input, output, session) {
   gcs_selected_anlegen <- function(gcsframe_source){
     gcs_selected <- filter(gcsframe, pid == gcsframe_source)
     gcs_selected2 <- mutate(gcs_selected, totalScore = gcs_auge+gcs_verbal+gcs_motorisch)
-    gcs_selected$zeit= format(gcs_selected$zeit,"%H:%M:%S")
+  #  gcs_selected$zeit= format(gcs_selected$zeit,"%H:%M:%S")
     return(gcs_selected2)
   }
   
@@ -364,38 +374,39 @@ server <- function(input, output, session) {
   })
   
   graphen_zeichnen <- function(x){
-    x$datumzeit <- paste(x$datum, x$zeit)
-    x$datumzeit <- as.POSIXct(x$datumzeit,  format="%Y-%m-%d %H:%M:%S", tz = "UTC")
+  #  x$datumzeit <- paste(x$datum, x$zeit)
+    x$datumzeit <- x$datum
+  #  x$datumzeit <- as.POSIXct(x$datumzeit,  format="%Y-%m-%d %H:%M:%S", tz = "UTC")
     output$gcsAugePlot <- renderPlot({ggplot(data =  x)  +
         geom_point(mapping = aes(x = datumzeit, y = gcs_auge, color = gcs_auge == 4)) +
         scale_color_manual(values = colorscale) +
-        scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
+   #     scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
         geom_text(aes(label= gcs_auge, x = datumzeit, y = gcs_auge), position = position_nudge(y = -0.25))}+ 
-        ylab("GCS(Öffnen der Augen)")+
+        ylab("GCS(Öffnen der Augen)")+xlab("")+
         ylim(1,4) +theme_bw()+ ggtitle("GCS(Öffnen der Augen)") +
         theme(legend.position = "none", axis.text.x  = element_text(angle=45, hjust = 1)))
     output$gcsVerbalPlot <- renderPlot({ggplot(data =  x) +
-        geom_point(mapping = aes(x = datumzeit, y = gcs_verbal, color = gcs_verbal == 5))+
+        geom_point(mapping = aes(x = datum, y = gcs_verbal, color = gcs_verbal == 5))+
         scale_color_manual(values = colorscale)+
-        scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
+    #    scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
         geom_text(aes(label= gcs_verbal, x = datumzeit, y = gcs_verbal), position = position_nudge(y = -0.25))}+ 
-        ylab("GCS(verbale Antwort)")+
+        ylab("GCS(verbale Antwort)")+ xlab("")+
         ylim(1,5) +theme_bw()+ ggtitle("GCS(verbale Antwort)") +
         theme(legend.position = "none", axis.text.x  = element_text(angle=45, hjust = 1)))
     output$gcsMotorischPlot <- renderPlot({ggplot(data =  x) +
         geom_point(mapping = aes(x = datumzeit, y = gcs_motorisch, color = gcs_motorisch==6))+
         scale_color_manual(values = colorscale)+ 
-        scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
+    #    scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
         geom_text(aes(label= gcs_motorisch, x = datumzeit, y = gcs_motorisch), position = position_nudge(y = -0.25))}+ 
-        ylab("GCS(motorische Antwort)")+
+        ylab("GCS(motorische Antwort)")+xlab("")+
         ylim(1,6) +theme_bw()+ ggtitle("GCS(motorische Antwort)") +
         theme(legend.position = "none", axis.text.x  = element_text(angle=45, hjust = 1)))
     output$gcsTotalPlot <- renderPlot({ggplot(data =  x) +
         geom_point(mapping = aes(x = datumzeit, y = totalScore, color = totalScore ==15)) +
         scale_color_manual(values = colorscale)+ 
-        scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
+     #   scale_x_datetime(breaks = x$datumzeit, labels = date_format("%d-%m %H:%M"))+
         geom_text(aes(label= totalScore, x = datumzeit, y = totalScore), position = position_nudge(y = -0.75))}+ 
-        ylab("GCS(Gesamt)")+
+        ylab("GCS(Gesamt)")+xlab("")+
         ylim(1,15) +theme_bw()+ggtitle("GCS(Gesamt)") +
         theme(legend.position = "none", axis.text.x  = element_text(angle=45, hjust = 1)))
   }
