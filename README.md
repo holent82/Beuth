@@ -1,2 +1,0 @@
-# Beuth
-Projektarbeit und weitere
